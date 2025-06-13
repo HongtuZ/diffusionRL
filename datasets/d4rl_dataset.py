@@ -1,46 +1,43 @@
-
 import numpy as np
-import d4rl
-import gym
+import minari
 from datasets.dataset import Dataset
 
 
 class D4RLDataset(Dataset):
 
     def __init__(self,
-                 env: gym.Env,
-                 clip_to_eps: bool = True,
-                 eps: float = 1e-5,
-                 scanning: bool = True,
+                 dataset_id: str,
+                 download: bool = True
                  ):
-        dataset = d4rl.qlearning_dataset(env)
+        self.dataset = minari.load_dataset(dataset_id, download=download)
 
-        if clip_to_eps:
-            lim = 1 - eps
-            dataset['actions'] = np.clip(dataset['actions'], -lim, lim)
+        episode_lens, episode_returns = [], []
+        observations, actions, rewards, next_observations, terminations, truncations = [], [], [], [], [], []
+        for episode in self.dataset:
+            observations.append(episode.observations[:-1])
+            actions.append(episode.actions)
+            rewards.append(episode.rewards)
+            next_observations.append(episode.observations[1:])
+            terminations.append(episode.terminations)
+            truncations.append(episode.truncations)
+            episode_returns.append(episode.rewards.sum())
+            episode_lens.append(len(episode.rewards))
+        
+        observations = np.concatenate(observations, axis=0).astype(np.float32)
+        actions = np.concatenate(actions, axis=0).astype(np.float32)
+        rewards = np.concatenate(rewards, axis=0).astype(np.float32)
+        next_observations = np.concatenate(next_observations, axis=0).astype(np.float32)
+        terminations = np.concatenate(terminations, axis=0).astype(np.bool_)
+        truncations = np.concatenate(truncations, axis=0).astype(np.bool_)
+        self.episode_returns = np.array(episode_returns)
+        self.episode_lens = np.array(episode_lens)
+        
 
-        dones_float = np.zeros_like(dataset['rewards'])
-
-        for i in range(len(dones_float) - 1):
-            """
-            Here the dones signal is given if the observation does not change.
-            Dones signal is used to separate trajectories
-            """
-            if np.linalg.norm(dataset['observations'][i + 1] -
-                              dataset['next_observations'][i]
-                              ) > 1e-6 or dataset['terminals'][i] == 1.0:
-                dones_float[i] = 1
-            else:
-                dones_float[i] = 0
-
-        dones_float[-1] = 1
-
-        super().__init__(dataset['observations'].astype(np.float32),
-                         actions=dataset['actions'].astype(np.float32),
-                         rewards=dataset['rewards'].astype(np.float32),
-                         masks=1.0 - dataset['terminals'].astype(np.float32),
-                         dones_float=dones_float.astype(np.float32),
-                         next_observations=dataset['next_observations'].astype(
-                             np.float32),
-                         size=len(dataset['observations']),
-                         scanning=scanning)
+        super().__init__(observations=observations,
+                         actions=actions,
+                         rewards=rewards,
+                         masks=(~terminations).astype(np.float32),
+                         dones_float=(terminations | truncations).astype(np.float32),
+                         next_observations=next_observations,
+                         size=len(rewards),
+                         scanning=True)

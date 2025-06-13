@@ -1,41 +1,43 @@
 from typing import Tuple
 
-import gym
+import gymnasium as gym
 
 from datasets.d4rl_dataset import D4RLDataset
 from datasets.dataset import Dataset
-import d4rl
 from typing import Callable
-from utils import traj_return_normalize
 import wrappers
+import numpy as np
 
 
-def make_env_and_dataset(env_name: str, seed: int, dataset_name: str,
+def make_env_and_dataset(seed: int, dataset_name: str,
                          video_save_folder: str = None, reward_tune: str = 'no',
                          episode_return: bool = False, scanning: bool = True) -> Tuple[gym.Env, Dataset, Callable]:
-    # env = make_env(env_name, seed, video_save_folder)
-    env = gym.make(env_name)  # test env. only
-    env = wrappers.EpisodeMonitor(env)  # record info['episode']['return', 'length', 'duration']
-    env = wrappers.SinglePrecision(env)  # -> np.float32
+    print('Loading dataset:', dataset_name)
+    dataset = D4RLDataset(dataset_name, download=True)
+
+    eval_env = dataset.dataset.recover_environment(eval_env=True)
+    eval_env = wrappers.EpisodeMonitor(eval_env)  # record info['episode']['return', 'length', 'duration']
+    eval_env = wrappers.SinglePrecision(eval_env)  # -> np.float32
 
     if video_save_folder is not None:
-        env = gym.wrappers.RecordVideo(env, video_save_folder)
+        eval_env = gym.wrappers.RecordVideo(eval_env, video_save_folder)
 
     # set seeds
-    env.seed(seed)
-    env.action_space.seed(seed)
-    env.observation_space.seed(seed)
-
-    dataset = D4RLDataset(env, scanning=scanning)
+    eval_env.action_space.seed(seed)
+    eval_env.observation_space.seed(seed)
 
     # reward normalization
     if reward_tune == 'antmaze100':
         def tune_fn(r):
             return r * 100
     elif reward_tune == 'iql_locomotion':
-        tune_fn = traj_return_normalize(dataset, scale=1000.)
+        # iql_normalize: normalized reward <- reward /(max_return-min_return)* 1000.0
+        # seed https://github.com/ikostrikov/implicit_q_learning/blob/master/train_offline.py
+        def tune_fn(r):
+            return 1000.0 * r / np.ptp(dataset.episode_returns)
     elif reward_tune == 'traj_normalize':
-        tune_fn = traj_return_normalize(dataset, scale=None)
+        def tune_fn(r):
+            return dataset.episode_lens.mean() * r / np.ptp(dataset.episode_returns)
     elif reward_tune == 'reward_normalize':
         r_mean, r_std = dataset.rewards.mean(), dataset.rewards.std()
         def tune_fn(r):
@@ -52,13 +54,7 @@ def make_env_and_dataset(env_name: str, seed: int, dataset_name: str,
     else:
         tune_fn = None
 
-    # get MC returns?
-    if episode_return:
-        dataset.episode_returns = env.get_normalized_score(dataset.get_episode_returns()) * 100.
-
     if tune_fn is not None:
         dataset.rewards = tune_fn(dataset.rewards)
 
-    assert 'd4rl' in dataset_name, "Only support d4rl dataset right now"
-
-    return env, dataset, tune_fn
+    return eval_env, dataset, tune_fn

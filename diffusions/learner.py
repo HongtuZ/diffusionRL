@@ -2,7 +2,7 @@
 # from functools import partial
 # from typing import Dict, Optional, Sequence, Tuple, Union
 # import flax.linen as nn
-# import gym
+# import gymnasium as gym
 # import jax
 # import jax.numpy as jnp
 # import optax

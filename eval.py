@@ -1,5 +1,5 @@
 import numpy as np
-import gym
+import gymnasium as gym
 import os
 from typing import Dict
 
@@ -9,11 +9,12 @@ STATISTICS = ["mean", "median", "std", "min", "max"]
 def evaluate(agent, env: gym.Env, num_episodes: int, raw_results: bool = False) -> Dict:
     returns, lengths, info = [], [], {}
     for _ in range(num_episodes):
-        observation, done = env.reset(), False
+        (observation, info), done = env.reset(), False
 
         while not done:
             action = agent.sample_actions(observation, temperature=0)  # eval takes argmax from actor net
-            observation, reward, done, info = env.step(np.clip(action, -1, 1))
+            observation, reward, terminated, truncated, info = env.step(np.clip(action, -1, 1))
+            done = terminated or truncated
 
         # episodic statistics from wrappers/EpisodeMonitor
         returns.append(info['episode']['return'])

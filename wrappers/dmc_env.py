@@ -8,7 +8,7 @@ from typing import Dict, Optional, OrderedDict
 import dm_env
 import numpy as np
 from dm_control import suite
-from gym import core, spaces
+from gymnasium import core, spaces
 
 from wrappers.common import TimeStep
 

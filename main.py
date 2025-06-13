@@ -7,11 +7,10 @@ from plots import plot_curve
 import argparse
 
 parser = argparse.ArgumentParser(description='Offline reinforcement learning')
-parser.add_argument('--gpu', default='6, 7', type=str, help='The device to use.')
+parser.add_argument('--gpu', default='0', type=str, help='The device to use.')
 # 'walker2d-expert-v2'  'halfcheetah-expert-v2' 'ant-medium-v2'    hopper-medium-v2
-parser.add_argument('--env', default='hopper-medium-replay-v2', type=str, help='Environment name.')
 parser.add_argument('--reward_tune', default='iql_locomotion', type=str, help='Reward tune.')
-parser.add_argument('--dataset_name', default='d4rl', choices=['d4rl'], help='Dataset name.')
+parser.add_argument('--dataset_id', default='mujoco/walker2d/medium-v0', help='Dataset id on minari.')
 parser.add_argument('--agent', default='dac', type=str, help='Training methods')
 parser.add_argument('--seed', default=0, type=int, help='Random seed.')
 parser.add_argument('--num_seeds', default=5, type=int, help='number of runs for different seeds')
@@ -20,13 +19,7 @@ parser.add_argument('--log_interval', default=5000, type=int, help='Logging inte
 parser.add_argument('--eval_interval', default=10000, type=int, help='Eval interval.')
 parser.add_argument('--batch_size', default=256, type=int, help='Mini batch size.')
 parser.add_argument('--max_steps', default=int(2e6), type=int, help='Number of training steps.')
-parser.add_argument('--finetune_step', default=int(3e6), type=int,
-                    help='After which it will change to online fine-tuning')
-parser.add_argument('--buffer_size', default=int(1e6), type=int, help='The replay buffer size of online fine-tuning')
 parser.add_argument('--discount', default=0.99, type=float, help='Discount factor')
-parser.add_argument('--percentile', default=100.0, type=float,
-                    help='Dataset percentile (see https://arxiv.org/abs/2106.01345).')
-parser.add_argument('--percentage', default=100.0, type=float, help='Percentage of the dataset to use for training.')
 parser.add_argument('--no_tqdm', action="store_false", help='Disable tqdm progress bar.')
 parser.add_argument('--save_video', action="store_true", help='Save videos during evaluation.')
 parser.add_argument('--save_ckpt', action="store_true", help='Save agents during training.')
@@ -67,7 +60,6 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 ray.init(log_to_driver=False)  # ignore some warnings (DeprecationWarning) to make it clean
 
 from eval import eval_agent, STATISTICS
-from utils import make_env
 from utils import prepare_output_dir, MBars
 from tensorboardX import SummaryWriter  # after ray, otherwise it will limit the cpu usage
 from datasets import make_env_and_dataset, ReplayBuffer  # after ray, otherwise no gpu is used
@@ -78,8 +70,7 @@ def _seed_run(learner,
               # dataset,  # shared memory: do not change its attributes in the seed_run!
               save_dir,
               pbar=None,
-              idx=0,
-              buffer_size=int(1e6)):
+              idx=0):
     local_seed = config['seed'] * 100 + idx
 
     random.seed(local_seed)
@@ -93,26 +84,10 @@ def _seed_run(learner,
         save_dir, 'video', 'eval')
     ckpt_save_folder = os.path.join(save_dir, 'ckpt')
 
-    # for evaluation
-    env = make_env(config['env'], local_seed, video_save_folder)
-
     # separate dataset for each process
-    _, dataset, reward_fn = make_env_and_dataset(config['env'], config['seed'], config['dataset_name'],
+    env, dataset, _ = make_env_and_dataset(config['seed'], config['dataset_id'],
                                                  reward_tune=config["reward_tune"],
                                                  scanning=not config['rand_batch'])
-
-    if config['percentage'] < 100.0:
-        dataset.take_random(config['percentage'])
-
-    if config['percentile'] < 100.0:
-        dataset.take_top(config['percentile'])
-
-    # for online fine-tuning, fix the size of the replay buffer to be 1 million
-    replay_buffer = ReplayBuffer(env.observation_space, env.action_space, capacity=buffer_size)
-    replay_buffer.initialize_with_dataset(dataset, num_samples=buffer_size)
-    replay_buffer.reward_fn = reward_fn
-    finetune_env = make_env(config['env'], local_seed + 100, video_save_folder)
-    observation, done = finetune_env.reset(), False
 
     a_config = config.copy()
     a_config['seed'] = local_seed
@@ -137,24 +112,7 @@ def _seed_run(learner,
                 if config['save_ckpt']:
                     agent.save_ckpt(prefix=f'{idx}_eval_', ckpt_folder=ckpt_save_folder, silence=True)
 
-            if i < config['finetune_step']:
-                # offline RL
-                batch = dataset.sample(batch_size=config['batch_size'])
-            else:
-                # online fine-tuning
-                action = agent.sample_actions(observation, temperature=0)
-                next_observation, reward, done, info = finetune_env.step(np.clip(action, -1, 1))
-                if not done or 'TimeLimit.truncated' in info:
-                    mask = 1.0
-                else:
-                    mask = 0.0
-                replay_buffer.insert(observation, action, reward, mask,
-                                     float(done), next_observation)
-                observation = next_observation
-                if done:
-                    observation, done = finetune_env.reset(), False
-                batch = replay_buffer.sample(batch_size=config['batch_size'])
-
+            batch = dataset.sample(batch_size=config['batch_size'])
             update_info = agent.update(batch)
             if i % config['log_interval'] == 0:  #
                 for k, v in update_info.items():
@@ -200,7 +158,7 @@ def main():
     else:
         tag = f"eta={FLAGS.eta}|QTar={FLAGS.q_tar}|rho={FLAGS.rho}|{FLAGS.tag}" if str(FLAGS.agent) == 'dac' else str(
             FLAGS.tag)
-    save_dir = prepare_output_dir(folder=os.path.join('results', FLAGS.env),
+    save_dir = prepare_output_dir(folder=os.path.join('results', FLAGS.dataset_id.replace('/', '_')),
                                   time_stamp=True,
                                   suffix=str(FLAGS.agent).upper() + tag)
 
@@ -212,16 +170,6 @@ def main():
             print(k + ' = ' + value, file=file)
         print(f"Save_folder = {save_dir}", file=file)
     print(f"\nSave results to: {save_dir}\n")
-
-    # _, dataset, r_fn = make_env_and_dataset(FLAGS.env, FLAGS.seed, FLAGS.dataset_name,
-    #                                         reward_tune=config["reward_tune"],
-    #                                         scanning=not FLAGS.rand_batch)
-    #
-    # if config['percentage'] < 100.0:
-    #     dataset.take_random(config['percentage'])
-    #
-    # if config['percentile'] < 100.0:
-    #     dataset.take_top(config['percentile'])
 
     import agents
     learner = {'bc': agents.BCLearner,
@@ -243,18 +191,16 @@ def main():
                   config,
                   save_dir,
                   None,
-                  0,
-                  FLAGS.buffer_size)
+                  0)
         print("testing passed!")
         return
-    pbar = MBars(FLAGS.max_steps, ':'.join([FLAGS.env, FLAGS.agent, tag]), FLAGS.num_seeds)
+    pbar = MBars(FLAGS.max_steps, ':'.join([FLAGS.dataset_id.replace('/', '_'), FLAGS.agent, tag]), FLAGS.num_seeds)
 
     futures = [seed_run.remote(learner,
                                config,
                                save_dir,
                                pbar.process,
-                               i,
-                               FLAGS.buffer_size)  # send dict to the multiprocessing
+                               i)  # send dict to the multiprocessing
                for i in range(FLAGS.num_seeds)]
     pbar.flush()
     final_res = ray.get(futures)
@@ -273,7 +219,7 @@ def main():
         print("\t".join([str(round(_, 2)) for _ in running_best] + [str(b_mean), str(b_std), str(b_max), str(b_min)]),
               file=f)
 
-    fig, ax = plot_curve(save_dir, label=":".join([FLAGS.agent, FLAGS.env]))
+    fig, ax = plot_curve(save_dir, label=":".join([FLAGS.agent, FLAGS.dataset_id]))
     fig.savefig(os.path.join(save_dir, "training_curve.png"))
 
 

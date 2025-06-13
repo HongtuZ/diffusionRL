@@ -1,6 +1,6 @@
-import gym
+import gymnasium as gym
 import numpy as np
-from gym import Wrapper
+from gymnasium import Wrapper
 
 
 def make_non_absorbing(observation):
