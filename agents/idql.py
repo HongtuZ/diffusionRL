@@ -49,7 +49,7 @@ def jit_update_actor(rng: PRNGKey,
     t = jax.random.randint(t_key, (batch_size,), 1, T + 1)[:, jnp.newaxis]
     eps_sample = jax.random.normal(noise_key, batch.actions.shape)
 
-    noise_level = jnp.sqrt(1 - alpha_hats[t])  # (B,)
+    noise_level = jnp.sqrt(alpha_hats[t])  # (B,)
     noisy_actions = jnp.sqrt(alpha_hats[t]) * batch.actions + noise_level * eps_sample
 
     q = critic_tar(batch.observations, batch.actions)
@@ -58,7 +58,7 @@ def jit_update_actor(rng: PRNGKey,
         Q_grad_fn = jax.vmap(jax.grad(lambda a, s: critic_tar(s, a).mean(axis=0)))
         Q_grad = Q_grad_fn(noisy_actions, batch.observations) / (Q_norm + EPS)  # (B, dimA)
     else:
-        Q_grad = jnp.zeros_like(noisy_actions)
+        Q_grad = 0
 
     def actor_loss_fn(actor_paras: Params) -> Tuple[jnp.ndarray, InfoDict]:
         pred_eps = actor.apply(actor_paras,
@@ -236,10 +236,10 @@ def _jit_sample_actions(rng: PRNGKey,
     return rng, actions[0]
 
 
-class DACLearner(Agent):
-    # Diffusion policy iteration for offline reinforcement learning
+class IDQLLearner(Agent):
+    # In-distribution Diffusion policy iteration for offline reinforcement learning
     # set most parameters the same as DiffusionQL
-    name = "dac"
+    name = "idql"
     model_names = ["actor", "actor_tar", "critic", "critic_tar"]
 
     def __init__(self,

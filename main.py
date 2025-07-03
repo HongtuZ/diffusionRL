@@ -8,7 +8,6 @@ import argparse
 
 parser = argparse.ArgumentParser(description='Offline reinforcement learning')
 parser.add_argument('--gpu', default='0', type=str, help='The device to use.')
-# 'walker2d-expert-v2'  'halfcheetah-expert-v2' 'ant-medium-v2'    hopper-medium-v2
 parser.add_argument('--reward_tune', default='iql_locomotion', type=str, help='Reward tune.')
 parser.add_argument('--dataset_id', default='mujoco/walker2d/medium-v0', help='Dataset id on minari.')
 parser.add_argument('--agent', default='dac', type=str, help='Training methods')
@@ -179,7 +178,10 @@ def main():
                'dbc': agents.DDPMBCLearner,
                'dac': agents.DACLearner,
                'dql': agents.DQLLearner,
-               'cql': agents.CQLLearner}[FLAGS.agent]
+               'cql': agents.CQLLearner,
+               'cdac': agents.CDACLearner,
+               'dqldac': agents.DQLDACLearner,
+               'idql': agents.IDQLLearner}[FLAGS.agent]
 
     if FLAGS.test:
         print("start testing!")

@@ -55,10 +55,19 @@ def jit_update_actor(rng: PRNGKey,
     q = critic_tar(batch.observations, batch.actions)
     Q_norm = jnp.abs(q).mean()
     if use_guidance_loss:
+        # 获取Q标准差和梯度
+        Q_std = critic_tar(batch.observations, noisy_actions).std(axis=0)  # (B, 1)
         Q_grad_fn = jax.vmap(jax.grad(lambda a, s: critic_tar(s, a).mean(axis=0)))
         Q_grad = Q_grad_fn(noisy_actions, batch.observations) / (Q_norm + EPS)  # (B, dimA)
+    
+        # 根据标准差控制是否使用梯度
+        use_grad_mask = (Q_std < 1) # (B,)
+        # 统计mask中为True的比例
+        use_Qgrad_ratio = use_grad_mask.mean()
+        Q_grad = Q_grad * use_grad_mask[:, None]
     else:
-        Q_grad = jnp.zeros_like(noisy_actions)
+        use_Qgrad_ratio = 0
+        Q_grad = 0
 
     def actor_loss_fn(actor_paras: Params) -> Tuple[jnp.ndarray, InfoDict]:
         pred_eps = actor.apply(actor_paras,
@@ -92,6 +101,7 @@ def jit_update_actor(rng: PRNGKey,
                             'Q_norm': Q_norm,
                             'Q_grad': Q_grad.mean(),
                             'Q_grad_abs': jnp.abs(Q_grad).mean(),
+                            'use_Qgrad_ratio': use_Qgrad_ratio,
                             }
 
     new_actor, info = actor.apply_gradient(actor_loss_fn)
@@ -236,7 +246,7 @@ def _jit_sample_actions(rng: PRNGKey,
     return rng, actions[0]
 
 
-class DACLearner(Agent):
+class CDACLearner(Agent):
     # Diffusion policy iteration for offline reinforcement learning
     # set most parameters the same as DiffusionQL
     name = "dac"
