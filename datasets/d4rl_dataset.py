@@ -1,3 +1,4 @@
+import minari.storage
 import numpy as np
 import minari
 from datasets.dataset import Dataset
@@ -6,10 +7,26 @@ from datasets.dataset import Dataset
 class D4RLDataset(Dataset):
 
     def __init__(self,
-                 dataset_id: str,
+                 dataset_id: list[str] | str,
                  download: bool = True
                  ):
-        self.dataset = minari.load_dataset(dataset_id, download=download)
+        if isinstance(dataset_id, str):
+            self.dataset = minari.load_dataset(dataset_id, download=download)
+        elif isinstance(dataset_id, list):
+            if len(dataset_id) == 1:
+                self.dataset = minari.load_dataset(dataset_id[0], download=download)
+            else:
+                sub_ids = [sub_id.split('/')[-1].split('-')[0] for sub_id in dataset_id]
+                new_dataset_id = '/'.join(dataset_id[0].split('/')[:-1]) + '/' + '-'.join(sub_ids)
+                if minari.storage.get_dataset_path(new_dataset_id).exists():
+                    self.dataset = minari.load_dataset(new_dataset_id, download=False)
+                else:
+                    datasets = []
+                    for sub_id in dataset_id:
+                        datasets.append(minari.load_dataset(sub_id, download=download))
+                    self.dataset = minari.combine_datasets(datasets, new_dataset_id)
+        else:
+            raise NotImplementedError('Not implement other type of dataset id')
 
         episode_lens, episode_returns = [], []
         observations, actions, rewards, next_observations, terminations, truncations = [], [], [], [], [], []

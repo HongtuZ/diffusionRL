@@ -9,7 +9,7 @@ import wrappers
 import numpy as np
 
 
-def make_env_and_dataset(seed: int, dataset_name: str,
+def make_env_and_dataset(seed: int, dataset_name: list | str,
                          video_save_folder: str = None, reward_tune: str = 'no',
                          episode_return: bool = False, scanning: bool = True) -> Tuple[gym.Env, Dataset, Callable]:
     print('Loading dataset:', dataset_name)

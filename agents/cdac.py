@@ -23,25 +23,15 @@ def mish(x):
     return x * jnp.tanh(nn.softplus(x))
 
 
-@partial(jax.jit, static_argnames=('T', 'Q_guidance', 'use_guidance_loss', 'ema_tau', 'need_ema',
-                                   'eta_min', 'eta_max', 'eta_lr', 'bc_threshold', 'action_decoder'))
+@partial(jax.jit, static_argnames=('T', 'need_ema'))
 def jit_update_actor(rng: PRNGKey,
                      actor: Model,
                      actor_tar: Model,
-                     critic_tar: Model,
                      T,
                      alpha_hats,
-                     eta,  # learnable, thus not static float
-                     eta_min: float,
-                     eta_max: float,
-                     eta_lr,
-                     bc_threshold,
-                     Q_guidance: str,
-                     use_guidance_loss: bool,
                      ema_tau: float,
                      need_ema: bool,
                      batch: Batch,
-                     action_decoder: Callable,  # for denoised action only
                      ) -> Tuple[PRNGKey, float, Model, Model, InfoDict]:
     rng, t_key, noise_key, dropout_key = jax.random.split(rng, 4)
     batch_size = batch.observations.shape[0]
@@ -52,23 +42,6 @@ def jit_update_actor(rng: PRNGKey,
     noise_level = jnp.sqrt(1 - alpha_hats[t])  # (B,)
     noisy_actions = jnp.sqrt(alpha_hats[t]) * batch.actions + noise_level * eps_sample
 
-    q = critic_tar(batch.observations, batch.actions)
-    Q_norm = jnp.abs(q).mean()
-    if use_guidance_loss:
-        # 获取Q标准差和梯度
-        Q_std = critic_tar(batch.observations, noisy_actions).std(axis=0)  # (B, 1)
-        Q_grad_fn = jax.vmap(jax.grad(lambda a, s: critic_tar(s, a).mean(axis=0)))
-        Q_grad = Q_grad_fn(noisy_actions, batch.observations) / (Q_norm + EPS)  # (B, dimA)
-    
-        # 根据标准差控制是否使用梯度
-        use_grad_mask = (Q_std < 1) # (B,)
-        # 统计mask中为True的比例
-        use_Qgrad_ratio = use_grad_mask.mean()
-        Q_grad = Q_grad * use_grad_mask[:, None]
-    else:
-        use_Qgrad_ratio = 0
-        Q_grad = 0
-
     def actor_loss_fn(actor_paras: Params) -> Tuple[jnp.ndarray, InfoDict]:
         pred_eps = actor.apply(actor_paras,
                                batch.observations,
@@ -78,48 +51,17 @@ def jit_update_actor(rng: PRNGKey,
                                training=True)
 
         bc_loss = ((pred_eps - eps_sample) ** 2).mean()
-        if Q_guidance == 'soft':
-            guidance_loss = (noise_level * Q_grad * pred_eps).mean()
-        elif Q_guidance == 'hard':
-            guidance_loss = (Q_grad * pred_eps).mean()
-        elif Q_guidance == 'denoised':
-            prior_key, denoise_key = jax.random.split(noise_key, 2)
-            prior = jax.random.normal(prior_key, pred_eps.shape)
-            actions, _ = action_decoder(denoise_key, actor.apply, actor_paras, batch.observations, prior,
-                                        1, True)  # temperature=1, clip_sampler=True
-            qs = critic_tar(batch.observations, actions).mean()  # (H, B) -> scalar
-            guidance_loss = - qs / (Q_norm + EPS)
-        else:
-            raise ValueError(f'Q_guidance={Q_guidance} is not supported')
 
-        actor_loss = eta * bc_loss + guidance_loss
+        actor_loss = bc_loss
 
         return actor_loss, {'actor_loss': actor_loss,
                             'bc_loss': bc_loss,
-                            'guidance_loss': guidance_loss,
-                            'eta': eta,
-                            'Q_norm': Q_norm,
-                            'Q_grad': Q_grad.mean(),
-                            'Q_grad_abs': jnp.abs(Q_grad).mean(),
-                            'use_Qgrad_ratio': use_Qgrad_ratio,
                             }
 
     new_actor, info = actor.apply_gradient(actor_loss_fn)
 
-    # update eta with dual gradient ascent
-    if eta_lr > 0 and use_guidance_loss:
-        eps_new = actor(batch.observations,
-                        noisy_actions,
-                        t,
-                        rngs={'dropout': dropout_key},
-                        training=False)
-        new_bc_loss = ((eps_new - eps_sample) ** 2).mean()
-        eta += eta_lr * (new_bc_loss - bc_threshold).clip(-1, 1)
-        # eta += eta_lr * (info['bc_loss'] - bc_threshold).clip(-1, 1)
-        eta = jnp.clip(eta, eta_min, eta_max)  # larger -> BC; small -> greedy(Q)
-
     new_actor_tar = ema_update(new_actor, actor_tar, ema_tau) if need_ema else actor_tar
-    return rng, eta, new_actor, new_actor_tar, info
+    return rng, new_actor, new_actor_tar, info
 
 
 @partial(jax.jit, static_argnames=('act_dim', 'discount', 'ema_tau', 'action_decoder', 'rho', 'temperature',
@@ -231,7 +173,10 @@ def _jit_sample_actions(rng: PRNGKey,
     rng, key = jax.random.split(rng)
 
     # eval actions
-    qs = critic_tar_apply_fn(critic_tar_params, observations, actions).mean(axis=0).reshape(-1, num_samples)
+    raw_qs = critic_tar_apply_fn(critic_tar_params, observations, actions)
+    qs_std = raw_qs.std(axis=0).reshape(-1, num_samples)
+    qs_mean = raw_qs.mean(axis=0).reshape(-1, num_samples)
+    qs = jnp.where(qs_std > 0.5, qs_mean, -jnp.inf)
     if temperature <= 0:  # deterministic action
         selected_indices = qs.argmax(axis=-1)
     else:
@@ -474,23 +419,14 @@ class CDACLearner(Agent):
                                                                             )
         info.update(q_info)
 
-        self.rng, self.eta, self.actor, self.actor_tar, act_info = jit_update_actor(self.rng,
+        self.rng, self.actor, self.actor_tar, act_info = jit_update_actor(self.rng,
                                                                                     self.actor,
                                                                                     self.actor_tar,
-                                                                                    self.critic_tar,
                                                                                     self.T,
                                                                                     self.alpha_hats,
-                                                                                    self.eta,
-                                                                                    self.eta_min,
-                                                                                    self.eta_max,
-                                                                                    self.eta_lr,
-                                                                                    self.bc_threshold,
-                                                                                    self.Q_guidance,
-                                                                                    self.use_guidance_loss,
                                                                                     self.ema_tau,
                                                                                     actor_need_ema,
                                                                                     batch,
-                                                                                    self.action_decoder,
                                                                                     )
         info.update(act_info)
         self._n_training_steps += 1

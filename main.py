@@ -9,7 +9,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Offline reinforcement learning')
 parser.add_argument('--gpu', default='0', type=str, help='The device to use.')
 parser.add_argument('--reward_tune', default='iql_locomotion', type=str, help='Reward tune.')
-parser.add_argument('--dataset_id', default='mujoco/walker2d/medium-v0', help='Dataset id on minari.')
+parser.add_argument('--dataset_id', nargs='+', default=['mujoco/walker2d/simple-v0', 'mujoco/walker2d/medium-v0'], help='Dataset id list on minari.')
 parser.add_argument('--agent', default='dac', type=str, help='Training methods')
 parser.add_argument('--seed', default=0, type=int, help='Random seed.')
 parser.add_argument('--num_seeds', default=5, type=int, help='number of runs for different seeds')
@@ -157,7 +157,9 @@ def main():
     else:
         tag = f"eta={FLAGS.eta}|QTar={FLAGS.q_tar}|rho={FLAGS.rho}|{FLAGS.tag}" if str(FLAGS.agent) == 'dac' else str(
             FLAGS.tag)
-    save_dir = prepare_output_dir(folder=os.path.join('results', FLAGS.dataset_id.replace('/', '_')),
+    sub_ids = [sub_id.split('/')[-1].split('-')[0] for sub_id in FLAGS.dataset_id]
+    new_dataset_id = '/'.join(FLAGS.dataset_id[0].split('/')[:-1]) + '/' + '-'.join(sub_ids)
+    save_dir = prepare_output_dir(folder=os.path.join('results', new_dataset_id.replace('/', '_')),
                                   time_stamp=True,
                                   suffix=str(FLAGS.agent).upper() + tag)
 
@@ -196,7 +198,7 @@ def main():
                   0)
         print("testing passed!")
         return
-    pbar = MBars(FLAGS.max_steps, ':'.join([FLAGS.dataset_id.replace('/', '_'), FLAGS.agent, tag]), FLAGS.num_seeds)
+    pbar = MBars(FLAGS.max_steps, ':'.join([new_dataset_id.replace('/', '_'), FLAGS.agent, tag]), FLAGS.num_seeds)
 
     futures = [seed_run.remote(learner,
                                config,
@@ -221,7 +223,7 @@ def main():
         print("\t".join([str(round(_, 2)) for _ in running_best] + [str(b_mean), str(b_std), str(b_max), str(b_min)]),
               file=f)
 
-    fig, ax = plot_curve(save_dir, label=":".join([FLAGS.agent, FLAGS.dataset_id]))
+    fig, ax = plot_curve(save_dir, label=":".join([FLAGS.agent, new_dataset_id]))
     fig.savefig(os.path.join(save_dir, "training_curve.png"))
 
 
