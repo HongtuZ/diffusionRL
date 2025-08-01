@@ -21,3 +21,9 @@ clu
 python-dateutil
 tabulate
 scikit-learn
+tensorboard
+minari[all]
+dm_control
+tensorflow-probability
+imageio
+mujoco=3.2.3

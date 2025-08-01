@@ -15,7 +15,6 @@ from diffusions.utils import FourierFeatures, cosine_beta_schedule, vp_beta_sche
 from networks.types import InfoDict, Params, PRNGKey, Batch
 from agents.base import Agent
 
-
 EPS = 1e-6
 
 
@@ -24,7 +23,7 @@ def mish(x):
 
 
 @partial(jax.jit, static_argnames=('T', 'Q_guidance', 'use_guidance_loss', 'ema_tau', 'need_ema',
-                                   'eta_min', 'eta_max', 'eta_lr', 'bc_threshold', 'action_decoder'))
+                                   'eta_min', 'eta_max', 'eta_lr', 'bc_threshold', 'action_decoder', 'clean_q_std_k',))
 def jit_update_actor(rng: PRNGKey,
                      actor: Model,
                      actor_tar: Model,
@@ -42,6 +41,7 @@ def jit_update_actor(rng: PRNGKey,
                      need_ema: bool,
                      batch: Batch,
                      action_decoder: Callable,  # for denoised action only
+                     clean_q_std_k: float,
                      ) -> Tuple[PRNGKey, float, Model, Model, InfoDict]:
     rng, t_key, noise_key, dropout_key = jax.random.split(rng, 4)
     batch_size = batch.observations.shape[0]
@@ -49,16 +49,19 @@ def jit_update_actor(rng: PRNGKey,
     t = jax.random.randint(t_key, (batch_size,), 1, T + 1)[:, jnp.newaxis]
     eps_sample = jax.random.normal(noise_key, batch.actions.shape)
 
-    noise_level = jnp.sqrt(alpha_hats[t])  # (B,)
+    noise_level = jnp.sqrt(1 - alpha_hats[t])  # (B,)
     noisy_actions = jnp.sqrt(alpha_hats[t]) * batch.actions + noise_level * eps_sample
 
     q = critic_tar(batch.observations, batch.actions)
+    clean_q_std = q.std(axis=0).reshape(-1, 1)  # (B, dimA)
     Q_norm = jnp.abs(q).mean()
     if use_guidance_loss:
         Q_grad_fn = jax.vmap(jax.grad(lambda a, s: critic_tar(s, a).mean(axis=0)))
         Q_grad = Q_grad_fn(noisy_actions, batch.observations) / (Q_norm + EPS)  # (B, dimA)
+        Q_std = critic_tar(batch.observations, noisy_actions).std(axis=0).reshape(-1, 1)  # (B, dimA)
+        Q_grad = jnp.where(Q_std <= clean_q_std_k*clean_q_std, Q_grad, 0.0)  # (B, dimA)
     else:
-        Q_grad = 0
+        Q_grad = jnp.zeros_like(noisy_actions)
 
     def actor_loss_fn(actor_paras: Params) -> Tuple[jnp.ndarray, InfoDict]:
         pred_eps = actor.apply(actor_paras,
@@ -182,27 +185,8 @@ def _jit_update_critic(rng: PRNGKey,
     return rng, new_critic, new_target_critic, info
 
 
-@jax.jit
-def _jit_update_v(critic_tar: Model,
-                  value: Model,
-                  batch: Batch) -> Tuple[Model, InfoDict]:
-    q = critic_tar(batch.observations, batch.actions).min(axis=0)
-
-    def value_loss_fn(value_params: Params) -> Tuple[jnp.ndarray, InfoDict]:
-        v = value.apply(value_params, batch.observations)
-        value_loss = ((q - v) ** 2).mean()
-        return value_loss, {
-            'value_loss': value_loss,
-            'v': v.mean(),
-        }
-
-    new_value, info = value.apply_gradient(value_loss_fn)
-
-    return new_value, info
-
-
 @partial(jax.jit, static_argnames=('act_model_apply_fn', 'critic_tar_apply_fn', 'action_decoder',
-                                   'act_dim', 'batch_act', 'num_samples', 'temperature', 'clip_sampler'))
+                                   'act_dim', 'batch_act', 'num_samples', 'temperature', 'clip_sampler', 'clean_q_std_k', 'sample_action_wo_uncertainty'))
 def _jit_sample_actions(rng: PRNGKey,
                         act_model_apply_fn: Callable,
                         act_params: Params,
@@ -215,17 +199,30 @@ def _jit_sample_actions(rng: PRNGKey,
                         action_decoder: Callable,
                         batch_act: bool,
                         num_samples: int,
+                        clean_q_std_k: float,
+                        clean_q_std: float,
+                        sample_action_wo_uncertainty: bool,  # whether to use uncertainty in action selection
                         # argmax: bool,
                         clip_sampler: bool) -> [PRNGKey, jnp.ndarray]:
     actions, rng = action_decoder(rng, act_model_apply_fn, act_params, observations, prior, 1, clip_sampler)
     rng, key = jax.random.split(rng)
 
     # eval actions
-    qs = critic_tar_apply_fn(critic_tar_params, observations, actions).mean(axis=0).reshape(-1, num_samples)
+    raw_qs = critic_tar_apply_fn(critic_tar_params, observations, actions)
+    qs_mean = raw_qs.mean(axis=0).reshape(-1, num_samples)
+    if sample_action_wo_uncertainty:
+        # use the mean of Qs to select actions
+        qs = qs_mean
+    else:
+        # use the std of Qs to select actions
+        qs_std = raw_qs.std(axis=0).reshape(-1, num_samples)
+        low_q = qs_mean - (qs_mean.max() - qs_mean.min())
+        qs = jnp.where(qs_std <= clean_q_std_k*clean_q_std, qs_mean, low_q)
+
     if temperature <= 0:  # deterministic action
         selected_indices = qs.argmax(axis=-1)
     else:
-        qs = qs / (jnp.abs(qs) + EPS)
+        # qs = qs / (jnp.abs(qs) + EPS)
         selected_indices = jax.random.categorical(key, logits=qs / (EPS + temperature), axis=-1)  # softmax
     actions = actions.reshape(-1, num_samples, act_dim)[jnp.arange(qs.shape[0]), selected_indices]
 
@@ -236,10 +233,10 @@ def _jit_sample_actions(rng: PRNGKey,
     return rng, actions[0]
 
 
-class IDQLLearner(Agent):
-    # In-distribution Diffusion policy iteration for offline reinforcement learning
+class UDACLearner(Agent):
+    # Diffusion policy iteration for offline reinforcement learning
     # set most parameters the same as DiffusionQL
-    name = "idql"
+    name = "udac"
     model_names = ["actor", "actor_tar", "critic", "critic_tar"]
 
     def __init__(self,
@@ -267,7 +264,7 @@ class IDQLLearner(Agent):
                  num_q_samples: int = 10,  # number of sampled x_0 for Q updates
                  num_action_samples: int = 10,  # number of sampled actions to select from for action
                  Q_guidance: str = "soft",
-                 use_guidance_loss: bool = True,
+                 no_q_guidance: bool = False,
                  act_with_q_guid: bool = False,
                  num_last_repeats: int = 0,
                  clip_sampler: bool = True,
@@ -276,12 +273,14 @@ class IDQLLearner(Agent):
                  lr_decay_steps: int = 2000000,
                  sampler: str = "ddpm",
                  action_prior: Union[str, Callable[[PRNGKey, tuple], jnp.ndarray]] = 'normal',
-                 temperature: float = 0.,
+                 temperature: float = 0,
                  actor_path: str = None,
                  num_qs: int = 2,  # number of Q in Q-ensemble
                  q_tar: str = 'lcb',
                  maxQ: bool = False,  # whether taking the maximum-Q over actions in critic learning
                  resnet: bool = False,
+                 clean_q_std_k: float = 2.0, 
+                 sample_action_wo_uncertainty: bool = False,  # whether to use uncertainty in action selection
                  **kwargs,
                  ):
 
@@ -397,10 +396,13 @@ class IDQLLearner(Agent):
         self.rho = rho  # use float(rho / jnp.sqrt(num_qs)) or other tuning methods for different ensemble size
         self.bc_threshold = bc_threshold
         self.Q_guidance = Q_guidance
-        self.use_guidance_loss = use_guidance_loss
+        self.use_guidance_loss = not no_q_guidance
 
         self.rng = rng
         self._n_training_steps = 0
+        self.clean_q_std_k = clean_q_std_k
+        self.clean_q_std = 1.0
+        self.sample_action_wo_uncertainty = sample_action_wo_uncertainty  # whether to use uncertainty in action selection
 
     def load_actor(self, actor_path):
         self.actor = self.actor.load(actor_path)
@@ -464,6 +466,8 @@ class IDQLLearner(Agent):
                                                                             )
         info.update(q_info)
 
+        self.clean_q_std = q_info['qs_std']
+
         self.rng, self.eta, self.actor, self.actor_tar, act_info = jit_update_actor(self.rng,
                                                                                     self.actor,
                                                                                     self.actor_tar,
@@ -481,6 +485,7 @@ class IDQLLearner(Agent):
                                                                                     actor_need_ema,
                                                                                     batch,
                                                                                     self.action_decoder,
+                                                                                    self.clean_q_std_k,
                                                                                     )
         info.update(act_info)
         self._n_training_steps += 1
@@ -523,6 +528,9 @@ class IDQLLearner(Agent):
                                                action_decoder,
                                                batch_act=batch_act,
                                                num_samples=self.num_action_samples,
+                                               clean_q_std_k=self.clean_q_std_k,
+                                               clean_q_std=self.clean_q_std,
+                                               sample_action_wo_uncertainty= self.sample_action_wo_uncertainty,
                                                # argmax=self.action_argmax,
                                                clip_sampler=self.clip_sampler)
         return action

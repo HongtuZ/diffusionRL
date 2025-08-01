@@ -48,6 +48,9 @@ parser.add_argument('--num_qs', default=10, type=int, help='The number of Q head
 parser.add_argument('--num_q_samples', default=10, type=int,
                     help='The number of actions samples for Q-target estimation')
 parser.add_argument('--num_action_samples', default=10, type=int, help='The number of Q samples')
+parser.add_argument('--no_q_guidance', action="store_true", help='Disable q guidance.')
+parser.add_argument('--clean_q_std_k', default=1.0, type=float, help='clean q std k')
+parser.add_argument('--sample_action_wo_uncertainty', action="store_true", help='Wether sample action without uncertainty.')
 FLAGS = parser.parse_args()
 
 # set computing resources
@@ -151,11 +154,11 @@ def main():
     # config = __import__(f'configs.{FLAGS.agent}_config', fromlist=('configs', FLAGS.agent)).config
     config = vars(FLAGS)
     if FLAGS.eta_lr > 0:
-        tag = f"BC<={FLAGS.bc_threshold}|QTar={FLAGS.q_tar}|rho={FLAGS.rho}|{FLAGS.tag}" if str(
-            FLAGS.agent) == 'dac' else str(
+        tag = f"BC<={FLAGS.bc_threshold}|QTar={FLAGS.q_tar}|rho={FLAGS.rho}|tempr={FLAGS.temperature}|clean_k={FLAGS.clean_q_std_k}|{FLAGS.tag}" if str(
+            FLAGS.agent) == 'dac' or str(FLAGS.agent) == 'udac' else str(
             FLAGS.tag)
     else:
-        tag = f"eta={FLAGS.eta}|QTar={FLAGS.q_tar}|rho={FLAGS.rho}|{FLAGS.tag}" if str(FLAGS.agent) == 'dac' else str(
+        tag = f"eta={FLAGS.eta}|QTar={FLAGS.q_tar}|rho={FLAGS.rho}|{FLAGS.tag}|tempr={FLAGS.temperature}|clean_k={FLAGS.clean_q_std_k}" if str(FLAGS.agent) == 'dac' or str(FLAGS.agent) == 'udac' else str(
             FLAGS.tag)
     sub_ids = [sub_id.split('/')[-1].split('-')[0] for sub_id in FLAGS.dataset_id]
     new_dataset_id = '/'.join(FLAGS.dataset_id[0].split('/')[:-1]) + '/' + '-'.join(sub_ids)
@@ -182,8 +185,8 @@ def main():
                'dql': agents.DQLLearner,
                'cql': agents.CQLLearner,
                'cdac': agents.CDACLearner,
-               'dqldac': agents.DQLDACLearner,
-               'idql': agents.IDQLLearner}[FLAGS.agent]
+               'udac': agents.UDACLearner,
+               }[FLAGS.agent]
 
     if FLAGS.test:
         print("start testing!")

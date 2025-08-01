@@ -1,9 +1,32 @@
-
-
 #gym
-python main.py --dataset_id mujoco/walker2d/expert-v0 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --tag Reproduce --num_seed 1 --gpu '0' --num_qs 10
-python main.py --dataset_id walker2d-medium-replay-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --tag Reproduce --num_seed 8 --gpu '0, 1' --num_qs 10
-python main.py --dataset_id walker2d-medium-expert-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --tag Reproduce --num_seed 8 --gpu '0, 1' --num_qs 10
+
+# udac
+# temperature = 0, clean_k = 1.0
+python main.py --dataset_id mujoco/walker2d/simple-v0 mujoco/walker2d/medium-v0 --agent udac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10
+# temperature = 0, clean_k = 1.0, no_q_guidance
+python main.py --dataset_id mujoco/walker2d/simple-v0 mujoco/walker2d/medium-v0 --agent udac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10 --no_q_guidance --tag wo_guidance
+# temperature = 1, clean_k = 1.0
+python main.py --dataset_id mujoco/walker2d/simple-v0 mujoco/walker2d/medium-v0 --agent udac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10 --temperature 1.0 
+# temperature = 1, clean_k = 1.0, no_q_guidance
+python main.py --dataset_id mujoco/walker2d/simple-v0 mujoco/walker2d/medium-v0 --agent udac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10 --temperature 1.0 --no_q_guidance --tag wo_guidance
+# temperature = 0, clean_k = 1.0, sample_action_wo_uncertainty
+python main.py --dataset_id mujoco/walker2d/simple-v0 mujoco/walker2d/medium-v0 --agent udac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10 --sample_action_wo_uncertainty --tag wo_uncertain_sample
+
+# temperature = 0, clean_k = 1.0
+python main.py --dataset_id mujoco/walker2d/expert-v0 --agent udac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10
+# temperature = 0, clean_k = 1.0, no_q_guidance
+python main.py --dataset_id mujoco/walker2d/expert-v0 --agent udac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10 --no_q_guidance --tag wo_guidance
+# temperature = 1, clean_k = 1.0
+python main.py --dataset_id mujoco/walker2d/expert-v0 --agent udac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10 --temperature 1.0 
+# temperature = 1, clean_k = 1.0, no_q_guidance
+python main.py --dataset_id mujoco/walker2d/expert-v0 --agent udac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10 --temperature 1.0 --no_q_guidance --tag wo_guidance
+# temperature = 0, clean_k = 1.0, sample_action_wo_uncertainty
+python main.py --dataset_id mujoco/walker2d/expert-v0 --agent udac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10 --sample_action_wo_uncertainty --tag wo_uncertain_sample
+
+
+
+python main.py --dataset_id walker2d-medium-replay-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 8 --gpu '0, 1' --num_qs 10
+python main.py --dataset_id walker2d-medium-expert-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 8 --gpu '0, 1' --num_qs 10
 
 python main.py --dataset_id hopper-medium-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1.5 --q_tar lcb --tag Reproduce --num_seed 8 --gpu '0, 1' --num_qs 10
 python main.py --dataset_id hopper-medium-replay-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1.5 --q_tar lcb --tag Reproduce --num_seed 8 --gpu '0, 1' --num_qs 10

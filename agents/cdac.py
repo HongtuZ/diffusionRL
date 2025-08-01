@@ -133,26 +133,6 @@ def _jit_update_critic(rng: PRNGKey,
 
     return rng, new_critic, new_target_critic, info
 
-
-@jax.jit
-def _jit_update_v(critic_tar: Model,
-                  value: Model,
-                  batch: Batch) -> Tuple[Model, InfoDict]:
-    q = critic_tar(batch.observations, batch.actions).min(axis=0)
-
-    def value_loss_fn(value_params: Params) -> Tuple[jnp.ndarray, InfoDict]:
-        v = value.apply(value_params, batch.observations)
-        value_loss = ((q - v) ** 2).mean()
-        return value_loss, {
-            'value_loss': value_loss,
-            'v': v.mean(),
-        }
-
-    new_value, info = value.apply_gradient(value_loss_fn)
-
-    return new_value, info
-
-
 @partial(jax.jit, static_argnames=('act_model_apply_fn', 'critic_tar_apply_fn', 'action_decoder',
                                    'act_dim', 'batch_act', 'num_samples', 'temperature', 'clip_sampler'))
 def _jit_sample_actions(rng: PRNGKey,
