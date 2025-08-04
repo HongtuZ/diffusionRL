@@ -17,7 +17,7 @@ parser.add_argument('--seed', default=0, type=int, help='Random seed.')
 parser.add_argument('--num_seeds', default=5, type=int, help='number of runs for different seeds')
 parser.add_argument('--n_eval_episodes', default=10, type=int, help='Number of episodes used for evaluation.')
 parser.add_argument('--log_interval', default=5000, type=int, help='Logging interval.')
-parser.add_argument('--eval_interval', default=10000, type=int, help='Eval interval.')
+parser.add_argument('--eval_interval', default=20000, type=int, help='Eval interval.')
 parser.add_argument('--batch_size', default=256, type=int, help='Mini batch size.')
 parser.add_argument('--max_steps', default=int(2e6), type=int, help='Number of training steps.')
 parser.add_argument('--finetune_step', default=int(3e6), type=int,
@@ -56,6 +56,9 @@ parser.add_argument('--num_qs', default=10, type=int, help='The number of Q head
 parser.add_argument('--num_q_samples', default=10, type=int,
                     help='The number of actions samples for Q-target estimation')
 parser.add_argument('--num_action_samples', default=10, type=int, help='The number of Q samples')
+parser.add_argument('--no_q_guidance', action="store_true", help='Disable q guidance.')
+parser.add_argument('--clean_q_std_k', default=1.0, type=float, help='clean q std k')
+parser.add_argument('--sample_action_wo_uncertainty', action="store_true", help='Wether sample action without uncertainty.')
 FLAGS = parser.parse_args()
 
 # set computing resources
@@ -194,11 +197,11 @@ def main():
     # config = __import__(f'configs.{FLAGS.agent}_config', fromlist=('configs', FLAGS.agent)).config
     config = vars(FLAGS)
     if FLAGS.eta_lr > 0:
-        tag = f"BC<={FLAGS.bc_threshold}|QTar={FLAGS.q_tar}|rho={FLAGS.rho}|{FLAGS.tag}" if str(
-            FLAGS.agent) == 'dac' else str(
+        tag = f"|BC<={FLAGS.bc_threshold}|QTar={FLAGS.q_tar}|rho={FLAGS.rho}|tempr={FLAGS.temperature}|clean_k={FLAGS.clean_q_std_k}|{FLAGS.tag}" if str(
+            FLAGS.agent) == 'dac' or str(FLAGS.agent) == 'udac' else str(
             FLAGS.tag)
     else:
-        tag = f"eta={FLAGS.eta}|QTar={FLAGS.q_tar}|rho={FLAGS.rho}|{FLAGS.tag}" if str(FLAGS.agent) == 'dac' else str(
+        tag = f"|eta={FLAGS.eta}|QTar={FLAGS.q_tar}|rho={FLAGS.rho}|{FLAGS.tag}|tempr={FLAGS.temperature}|clean_k={FLAGS.clean_q_std_k}" if str(FLAGS.agent) == 'dac' or str(FLAGS.agent) == 'udac' else str(
             FLAGS.tag)
     save_dir = prepare_output_dir(folder=os.path.join('results', FLAGS.env),
                                   time_stamp=True,
@@ -231,7 +234,9 @@ def main():
                'dbc': agents.DDPMBCLearner,
                'dac': agents.DACLearner,
                'dql': agents.DQLLearner,
-               'cql': agents.CQLLearner}[FLAGS.agent]
+               'cql': agents.CQLLearner,
+               'udac': agents.UDACLearner,
+               }[FLAGS.agent]
 
     if FLAGS.test:
         print("start testing!")

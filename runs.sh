@@ -1,9 +1,10 @@
 
 
 #gym
-python main.py --env walker2d-medium-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --tag Reproduce --num_seed 8 --gpu '0, 1' --num_qs 10
-python main.py --env walker2d-medium-replay-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --tag Reproduce --num_seed 8 --gpu '0, 1' --num_qs 10
-python main.py --env walker2d-medium-expert-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --tag Reproduce --num_seed 8 --gpu '0, 1' --num_qs 10
+python main.py --env walker2d-medium-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb  --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10
+python main.py --env walker2d-expert-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10
+python main.py --env walker2d-medium-replay-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10
+python main.py --env walker2d-medium-expert-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 4 --gpu '0, 1, 2, 3' --num_qs 10
 
 python main.py --env hopper-medium-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1.5 --q_tar lcb --tag Reproduce --num_seed 8 --gpu '0, 1' --num_qs 10
 python main.py --env hopper-medium-replay-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1.5 --q_tar lcb --tag Reproduce --num_seed 8 --gpu '0, 1' --num_qs 10
