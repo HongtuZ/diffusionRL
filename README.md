@@ -6,6 +6,8 @@ Our implementation is built upon [JAX](https://github.com/ikostrikov/jaxrl) and 
 
 ## Requirements
 
+Python=3.10
+
 To install requirements:
 
 ```setup
@@ -13,6 +15,11 @@ pip install -r requirements.txt
 ```
 
 >When running the code for the first time, it is necessary to download the [D4RL](https://github.com/digital-brain-sh/d4rl) dataset.
+> Note `pip install "Cython<3"` to compile the mujoco.
+> To download the D4RL datasets, run the following command:
+```download
+python d4rl_datasets_download.py
+```
 > As for installation of the Mujoco task environment, please refer to the [guidelines](https://ivanvoid.github.io/voidlog.github.io/2022/05/27/d4rl_installation.html).
 
 
