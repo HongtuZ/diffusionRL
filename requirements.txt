@@ -13,6 +13,8 @@ matplotlib
 tqdm
 pybullet
 setuptools
+tensorflow-probability
+tensorboard
 tensorboardx
 ray
 pandas
@@ -23,5 +25,4 @@ flax
 clu
 python-dateutil
 tabulate
-# sklearn~=0.0.post1
 scikit-learn

@@ -22,6 +22,55 @@ python d4rl_datasets_download.py
 ```
 > As for installation of the Mujoco task environment, please refer to the [guidelines](https://ivanvoid.github.io/voidlog.github.io/2022/05/27/d4rl_installation.html).
 
+## Usage
+
+* install the requirements
+```bash
+sudo apt install libx11-dev libglew-dev libosmesa6-dev patchelf -y
+```
+
+* create a conda environment
+```bash
+conda create -n drl python=3.10
+conda activate drl
+```
+
+* install the mujoco210
+```bash
+wget https://mujoco.org/download/mujoco210-linux-x86_64.tar.gz
+tar -xvzf mujoco210-linux-x86_64.tar.gz
+mkdir ~/.mujoco
+mv mujoco210 ~/.mujoco/
+echo 'export MUJOCO_PY_MUJOCO_PATH=~/.mujoco/mujoco210' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia' >> ~/.bashrc
+source ~/.bashrc
+```
+
+* install the d4rl
+```bash
+git clone https://github.com/rail-berkeley/d4rl.git
+cd d4rl
+pip install -e .
+pip install "Cython<3"  # to compile the mujoco in d4rl_test.py
+```
+
+* download the d4rl datasets
+```bash
+pip install huggingface_hub
+python d4rl_datasets_download.py
+python d4rl_test.py # test the d4rl datasets
+```
+
+* install the training python packages
+```bash
+pip install -r requirements.txt
+```
+
+* run the test
+```bash
+python main.py --env walker2d-medium-v2 --agent dac --eta 1 --eta_lr 0.001 --bc_threshold 1 --rho 1 --q_tar lcb --num_seed 1 --gpu 0 --test
+``` 
 
 ## Training
 We train our algorithm for 2 million gradient steps in order to ensure model convergence. 

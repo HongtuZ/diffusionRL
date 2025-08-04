@@ -1,0 +1,14 @@
+import gym
+import d4rl
+import d4rl.gym_mujoco # Import required to register environments
+
+# Create the environment
+env = gym.make('walker2d-expert-v2')
+
+# d4rl abides by the OpenAI gym interface
+env.reset()
+env.step(env.action_space.sample())
+
+# also adds next_observations.
+dataset = d4rl.qlearning_dataset(env)
+print(dataset['observations']) # An N x dim_observation Numpy array of observations
