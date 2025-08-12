@@ -57,7 +57,7 @@ parser.add_argument('--num_q_samples', default=10, type=int,
                     help='The number of actions samples for Q-target estimation')
 parser.add_argument('--num_action_samples', default=10, type=int, help='The number of Q samples')
 parser.add_argument('--no_q_guidance', action="store_true", help='Disable q guidance.')
-parser.add_argument('--clean_q_std_k', default=1.25, type=float, help='clean q std k')
+parser.add_argument('--clean_q_std_k', default=2, type=float, help='clean q std k')
 parser.add_argument('--sample_action_wo_uncertainty', action="store_true", help='Wether sample action without uncertainty.')
 FLAGS = parser.parse_args()
 

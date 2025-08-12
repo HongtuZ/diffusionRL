@@ -3,7 +3,7 @@ import d4rl
 import d4rl.gym_mujoco # Import required to register environments
 
 # Create the environment
-env = gym.make('walker2d-expert-v2')
+env = gym.make('antmaze-large-diverse-v0')
 
 # d4rl abides by the OpenAI gym interface
 env.reset()
