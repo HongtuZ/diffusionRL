@@ -54,12 +54,11 @@ def jit_update_actor(rng: PRNGKey,
 
     q = critic_tar(batch.observations, batch.actions)
     clean_q_std = q.std(axis=0).reshape(-1, 1)  # (B, dimA)
+    noisy_q_std = critic_tar(batch.observations, noisy_actions).std(axis=0).reshape(-1, 1)  # (B, dimA)
     Q_norm = jnp.abs(q).mean()
     if use_guidance_loss:
         Q_grad_fn = jax.vmap(jax.grad(lambda a, s: critic_tar(s, a).mean(axis=0)))
         Q_grad = Q_grad_fn(noisy_actions, batch.observations) / (Q_norm + EPS)  # (B, dimA)
-        Q_std = critic_tar(batch.observations, noisy_actions).std(axis=0).reshape(-1, 1)  # (B, dimA)
-        Q_grad = jnp.where(Q_std <= clean_q_std_k*clean_q_std, Q_grad, 0.0)  # (B, dimA)
     else:
         Q_grad = jnp.zeros_like(noisy_actions)
 
@@ -73,6 +72,7 @@ def jit_update_actor(rng: PRNGKey,
 
         bc_loss = ((pred_eps - eps_sample) ** 2).mean()
         if Q_guidance == 'soft':
+            pred_eps = jnp.where(noisy_q_std <= clean_q_std_k*clean_q_std, pred_eps, jnp.zeros_like(pred_eps))
             guidance_loss = (noise_level * Q_grad * pred_eps).mean()
         elif Q_guidance == 'hard':
             guidance_loss = (Q_grad * pred_eps).mean()
@@ -95,6 +95,8 @@ def jit_update_actor(rng: PRNGKey,
                             'Q_norm': Q_norm,
                             'Q_grad': Q_grad.mean(),
                             'Q_grad_abs': jnp.abs(Q_grad).mean(),
+                            'clean_q_std': clean_q_std.mean(),
+                            'noise_q_std': noisy_q_std.mean(),
                             }
 
     new_actor, info = actor.apply_gradient(actor_loss_fn)
